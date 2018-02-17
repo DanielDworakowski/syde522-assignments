@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -24,7 +25,6 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         residual = x
-        print('in',x.shape)
 
         out = self.conv1(x)
         out = self.bn1(out)
@@ -35,8 +35,6 @@ class BasicBlock(nn.Module):
 
         if self.downsample is not None:
             residual = self.downsample(x)
-
-        print('out',out.shape)
         out += residual
         out = self.relu(out)
 
@@ -53,7 +51,14 @@ class Mininet(torch.nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.block1 = BasicBlock(32, 32)
-        self.block2 = BasicBlock(64, 128, 2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=0)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.conv4 = nn.Conv2d(128, 64, kernel_size=3, stride=2)
+        self.avgPool = nn.AvgPool2d(4)
+        self.linear = nn.Linear(128, 20)
+
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -70,7 +75,14 @@ class Mininet(torch.nn.Module):
         out = self.bn1(out)
         out = self.relu(out)
         out = self.maxpool(out)
-        print(out.shape)
         out = self.block1(out)
-        print(out.shape)
-        return out1
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+        out = self.conv3(out)
+        out = self.bn3(out)
+        out = self.relu(out)
+        out = self.conv4(out)
+        out = self.avgPool(out)
+        out = self.linear(out.view(-1, 128))
+        return out
