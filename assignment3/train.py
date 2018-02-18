@@ -29,7 +29,10 @@ def train(args, imgs, labels, img_val, label_val):
     # 
     # Create the image augmentation.
     t = transforms.Compose([
-            DataUtil.Normalize([0.59008044], np.sqrt([0.06342617]))
+            DataUtil.ToPIL(),
+            DataUtil.RandomFlips(),
+            DataUtil.ToTensor(),
+            DataUtil.Normalize([0.59008044], np.sqrt([0.06342617])),
         ])
     topil = transforms.ToPILImage()
     train = dataloader.npdataset(imgs, labels.view(-1), t)
@@ -106,6 +109,7 @@ def train(args, imgs, labels, img_val, label_val):
             #
             # Print per epoch results.
             print('\n{} Loss: {:.4f} Acc: {:.4f}'.format(stage, epochLoss, epochAcc))
+    printColour('Best validation performance:%d'%(bestAcc), colours.OKGREEN)
 #
 # Main code.
 if __name__ == '__main__':

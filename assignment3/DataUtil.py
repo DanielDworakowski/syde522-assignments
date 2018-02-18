@@ -57,7 +57,6 @@ class RandomCrop(object):
     '''Crop randomly the image in a sample.
     http://pytorch.org/tutorials/beginner/data_loading_tutorial.html
 
-
     Args:
         output_size (tuple or int): Desired output size. If int, square crop
             is made.
@@ -111,4 +110,41 @@ class Normalize(object):
 
     def __call__(self, sample):
         sample['img'] = self.norm(sample['img'])
+        return sample
+
+class RandomFlips(object):
+    '''Randomly horizontally and vertically flip images. 
+    '''
+
+    def __init__(self, hFlip = 0.5, vFlip = 0.5):
+        self.hFlip = transforms.RandomHorizontalFlip()
+        self.vFlip = transforms.RandomVerticalFlip()
+
+    def __call__(self, sample):
+        img = sample['img']
+        img = self.hFlip(img)
+        img = self.vFlip(img)
+        sample['img'] = img
+        return sample
+
+class ToPIL(object):
+    ''' Convert to PIL.
+    '''
+
+    def __init__(self):
+        self.topil = transforms.ToPILImage()
+
+    def __call__(self, sample):
+        sample['img'] = self.topil(sample['img'])
+        return sample
+
+class ToTensor(object):
+    ''' Convert to PIL.
+    '''
+
+    def __init__(self):
+        self.totensor = transforms.ToTensor()
+
+    def __call__(self, sample):
+        sample['img'] = self.totensor(sample['img'])
         return sample
