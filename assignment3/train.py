@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-import tqdm
 import torch
+import DataUtil
 import argparse
 import dataloader
 import numpy as np
+import progressbar
 from debug import *
 import mininet as mn
 import torch.nn as nn
@@ -24,16 +25,18 @@ def getInputArgs():
     return args
 #
 # Main loop for running the agent.
-def train(args, imgs, labels, img_test, label_test):
+def train(args, imgs, labels, img_val, label_val):
     # 
     # Create the image augmentation.
-    # [0.59008044]
-    # [0.06342617]
-    t = None
+    t = transforms.Compose([
+            DataUtil.Normalize([0.59008044], np.sqrt([0.06342617]))
+        ])
     topil = transforms.ToPILImage()
     train = dataloader.npdataset(imgs, labels.view(-1), t)
+    validation = dataloader.npdataset(img_val, label_val.view(-1), t)
     stages = {
-        'train': torch.utils.data.DataLoader(train, batch_size=args.bSize, shuffle=False)
+        'train': torch.utils.data.DataLoader(train, batch_size=args.bSize, shuffle=True, num_workers=0),
+        'val': torch.utils.data.DataLoader(validation, batch_size=args.bSize, shuffle=False, num_workers=0),
     }
     model = mn.Mininet()
     usegpu = torch.cuda.is_available()
@@ -46,8 +49,9 @@ def train(args, imgs, labels, img_test, label_test):
     # 
     # Iterate.
     for epoch in range(args.numEpochs):
-        printColour('Epoch {}/{}'.format(epoch, args.numEpochs - 1), colours.HEADER)
+        printColour('Epoch {}/{}'.format(epoch, args.numEpochs - 1), colours.OKBLUE)
         for stage in stages:
+            print('Stage: ', stage)
             #
             # Switch on / off gradients.
             model.train(stage == 'train')
@@ -59,10 +63,10 @@ def train(args, imgs, labels, img_test, label_test):
             # 
             # Progress bar.
             numMini = len(stages[stage])
-            pbar = tqdm.tqdm(total=numMini)
+            pbar = progressbar.ProgressBar(max_value=numMini-1) 
             # 
             # Train.
-            for data in loader:
+            for i, data in enumerate(loader):
                 inputs, labels_cpu = data['img'], data['label']
                 if usegpu:
                     labels_cpu.squeeze_()
@@ -87,8 +91,7 @@ def train(args, imgs, labels, img_test, label_test):
                 #  Stats.
                 runningLoss += loss.data[0]
                 runningCorrect += dCorrect
-                pbar.update(1)
-            pbar.close()
+                pbar.update(i)
             #
             # Overall stats
             epochLoss = runningLoss / len(stages[stage])
@@ -102,21 +105,19 @@ def train(args, imgs, labels, img_test, label_test):
                 bestModel = model.state_dict()
             #
             # Print per epoch results.
-            print('{} Loss: {:.4f} Acc: {:.4f}'.format(stage, epochLoss, epochAcc))
+            print('\n{} Loss: {:.4f} Acc: {:.4f}'.format(stage, epochLoss, epochAcc))
 #
 # Main code.
 if __name__ == '__main__':
     args = getInputArgs()
     imgs = np.expand_dims(np.load('data/X.npy').astype(np.float32) / 255, 1)
+    labels = np.load('data/Y.npy')
     # 
     # Image statistics. 
     curMean = np.mean(imgs, axis=(0,2,3))
     curVar = np.var(imgs, axis=(0,2,3))
-    print(curMean)
-    print(curVar)
-    labels = np.load('data/Y.npy')
     kf = KFold(n_splits=args.nSplit, shuffle = True)
     for train_index, test_index in kf.split(imgs): 
-        X_train, X_test = imgs[train_index], imgs[test_index]
-        y_train, y_test = labels[train_index], labels[test_index]
-        train(args, torch.from_numpy(X_train), torch.from_numpy(y_train), torch.from_numpy(X_test), torch.from_numpy(y_test))
+        X_train, X_test = torch.from_numpy(imgs[train_index]), torch.from_numpy(imgs[test_index])
+        y_train, y_test = torch.from_numpy(labels[train_index]), torch.from_numpy(labels[test_index])
+        train(args, X_train, y_train, X_test, y_test)
