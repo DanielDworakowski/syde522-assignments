@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import math
 import torch
 import DataUtil
 import argparse
@@ -12,6 +13,7 @@ import torch.optim as optim
 import torch.utils.data as dl
 from torch.autograd import Variable
 from torch.optim import lr_scheduler
+from tensorboardX import SummaryWriter
 from sklearn.model_selection import KFold
 import torchvision.transforms as transforms
 #
@@ -21,8 +23,27 @@ def getInputArgs():
     parser.add_argument('--nSplit', dest='nSplit', default=10, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--numEpochs', dest='numEpochs', default=32, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--batchSize', dest='bSize', default=16, type=int, help='How many splits to use in KFold cross validation.')
+    parser.add_argument('--useTB', dest='useTB', default=False, action='store_true', help='Whether or not to log to Tesnor board.')
     args = parser.parse_args()
     return args
+#
+# Setup tensorboard as require.
+def doNothing(logger = None, model = None, tmp = None):
+    pass
+#
+# Run every epoch.
+def logEpochTensorboard(logger, model, epochSummary):
+    logger.add_scalar('%s_loss'%epochSummary['phase'], epochSummary['loss'], epochSummary['epoch'])
+    logger.add_scalar('%s_acc'%epochSummary['phase'], epochSummary['acc'], epochSummary['epoch'])
+    labels = epochSummary['data']['label']
+    for i in range(epochSummary['data']['label'].shape[0]):
+        logger.add_image('{}_image_i-{}_epoch-{}_pre-:{}_label-{}'.format(epochSummary['phase'], i, epochSummary['epoch'], epochSummary['pred'][i], int(labels[i])), epochSummary['data']['img'][i]*math.sqrt(0.06342617) + 0.59008044, epochSummary['epoch'])
+    for name, param in model.named_parameters():
+        logger.add_histogram(name, param.clone().cpu().data.numpy(), epochSummary['epoch'])
+#
+# Write everything as needed.
+def closeTensorboard(logger):
+    logger.close()
 #
 # Main loop for running the agent.
 def train(args, imgs, labels, img_val, label_val):
@@ -44,11 +65,22 @@ def train(args, imgs, labels, img_val, label_val):
     model = mn.Mininet()
     usegpu = torch.cuda.is_available()
     criteria = nn.CrossEntropyLoss()
+    # 
+    # Whether to use the GPU.
     if usegpu:
         model.cuda()
+    # 
+    # Type of optimizer. 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-3)
     bestModel = model.state_dict()
     bestAcc = 0
+    logger = None
+    logEpoch = doNothing
+    closeLogger = doNothing
+    if args.useTB:
+        logger = SummaryWriter()
+        logEpoch = logEpochTensorboard
+        closeLogger = closeTensorboard
     # 
     # Iterate.
     for epoch in range(args.numEpochs):
@@ -109,7 +141,19 @@ def train(args, imgs, labels, img_val, label_val):
             #
             # Print per epoch results.
             print('\n{} Loss: {:.4f} Acc: {:.4f}'.format(stage, epochLoss, epochAcc))
-    printColour('Best validation performance:%d'%(bestAcc), colours.OKGREEN)
+            # 
+            # Summary for logging in TB.
+            summary = {
+                'phase': stage,
+                'epoch': epoch,
+                'loss': epochLoss,
+                'acc': epochAcc,
+                'data': data,
+                'pred' : preds
+            }
+            logEpoch(logger, model, summary)
+    printColour('Best validation performance:%f'%(bestAcc), colours.OKGREEN)
+    closeLogger(logger)
 #
 # Main code.
 if __name__ == '__main__':
