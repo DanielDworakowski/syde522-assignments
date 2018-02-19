@@ -7,7 +7,8 @@ import dataloader
 import numpy as np
 import progressbar
 from debug import *
-import mininet as mn
+# import mininet2 as mn
+import pjReddieNet as mn
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as dl
@@ -55,6 +56,10 @@ def train(args, imgs, labels, img_val, label_val):
             DataUtil.ToTensor(),
             DataUtil.Normalize([0.59008044], np.sqrt([0.06342617])),
         ])
+    # RandomRotation
+    # FiveCrop
+    # RandomResizedCrop(size, scale=(0.08, 1.0), ratio=(0.75, 1.3333333333333333), interpolation=2)
+
     topil = transforms.ToPILImage()
     train = dataloader.npdataset(imgs, labels.view(-1), t)
     validation = dataloader.npdataset(img_val, label_val.view(-1), t)

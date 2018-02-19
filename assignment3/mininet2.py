@@ -45,20 +45,21 @@ class Mininet(torch.nn.Module):
         """
         """
         super(Mininet, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
-        self.bn1 = nn.BatchNorm2d(32)
+        self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.block1 = BasicBlock(32, 32)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=0)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2)
-        self.bn3 = nn.BatchNorm2d(128)
-        self.conv4 = nn.Conv2d(128, 64, kernel_size=3, stride=2)
+        self.block1 = BasicBlock(64, 64)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=0)
+        self.bn2 = nn.BatchNorm2d(128)
+        self.block2 = BasicBlock(128, 128)
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride=2)
+        self.bn3 = nn.BatchNorm2d(256)
+        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride=2)
         self.avgPool = nn.AvgPool2d(4)
-        self.linear1 = nn.Linear(128, 64)
-        self.linear2 = nn.Linear(64, 20)
+        self.linear1 = nn.Linear(1024, 512)
+        self.linear2 = nn.Linear(512, 20)
 
 
         for m in self.modules():
@@ -80,12 +81,13 @@ class Mininet(torch.nn.Module):
         out = self.conv2(out)
         out = self.bn2(out)
         out = self.relu(out)
+        out = self.block2(out)
         out = self.conv3(out)
         out = self.bn3(out)
         out = self.relu(out)
         out = self.conv4(out)
         out = self.avgPool(out)
-        out = self.linear1(out.view(-1, 128))
+        out = self.linear1(out.view(-1, 1024))
         out = self.relu(out)
         out = self.linear2(out)
         return out
