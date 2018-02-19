@@ -21,7 +21,7 @@ import torchvision.transforms as transforms
 # Parse the input arguments.
 def getInputArgs():
     parser = argparse.ArgumentParser('General tool to train a NN based on passed configuration.')
-    parser.add_argument('--nSplit', dest='nSplit', default=8, type=int, help='How many splits to use in KFold cross validation.')
+    parser.add_argument('--nSplit', dest='nSplit', default=6, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--numEpochs', dest='numEpochs', default=128, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--batchSize', dest='bSize', default=32, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--useTB', dest='useTB', default=False, action='store_true', help='Whether or not to log to Tesnor board.')
@@ -53,7 +53,7 @@ def train(args, imgs, labels, img_val, label_val):
     t = transforms.Compose([
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
-            DataUtil.RandomRotation(10),
+            # DataUtil.RandomRotation(10),
             DataUtil.RandomResizedCrop(140, (0.7, 1.0)),
             DataUtil.ToTensor(),
             DataUtil.Normalize([0.59008044], np.sqrt([0.06342617])),
@@ -110,7 +110,7 @@ def train(args, imgs, labels, img_val, label_val):
             loader = stages[stage]
             #
             # Progress bar.
-            numMini = len(stages[stage])
+            numMini = len(loader)
             pbar = progressbar.ProgressBar(max_value=numMini-1)
             #
             # Train.
@@ -126,6 +126,9 @@ def train(args, imgs, labels, img_val, label_val):
                 if stage == 'train':
                     out = model(inputs)
                 else:
+                    #
+                    # The 5 crop from above takes the corners of the iamge and center.
+                    # We must now average the contributions.
                     bs, ncrops, c, h, w = inputs.size()
                     result = model(inputs.view(-1, c, h, w)) # fuse batch size and ncrops
                     out = result.view(bs, ncrops, -1).mean(1) # avg over crops
