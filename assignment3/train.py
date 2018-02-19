@@ -7,8 +7,8 @@ import dataloader
 import numpy as np
 import progressbar
 from debug import *
-import mininet2 as mn
-# import cropnet as mn
+# import mininet2 as mn
+import cropnet as mn
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as dl
@@ -53,10 +53,15 @@ def train(args, imgs, labels, img_val, label_val):
     t = transforms.Compose([
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
-            # DataUtil.RandomResizedCrop(140, (0.75, 1.0)),
-            DataUtil.RandomRotation(5),
+            DataUtil.RandomRotation(10),
+            DataUtil.RandomResizedCrop(140, (0.75, 1.0)),
             DataUtil.ToTensor(),
             DataUtil.Normalize([0.59008044], np.sqrt([0.06342617])),
+        ])
+    t_test = transforms.Compose([
+            DataUtil.ToPIL(),
+            DataUtil.FiveCrop(140, [0.59008044], np.sqrt([0.06342617])),
+            # DataUtil.Normalize(),
         ])
     # RandomRotation
     # FiveCrop
@@ -64,7 +69,7 @@ def train(args, imgs, labels, img_val, label_val):
 
     topil = transforms.ToPILImage()
     train = dataloader.npdataset(imgs, labels.view(-1), t)
-    validation = dataloader.npdataset(img_val, label_val.view(-1), t)
+    validation = dataloader.npdataset(img_val, label_val.view(-1), t_test)
     stages = {
         'train': torch.utils.data.DataLoader(train, batch_size=args.bSize, shuffle=True, num_workers=0),
         'val': torch.utils.data.DataLoader(validation, batch_size=args.bSize, shuffle=False, num_workers=0),
@@ -117,7 +122,12 @@ def train(args, imgs, labels, img_val, label_val):
                     inputs, labels = Variable(inputs), Variable(labels_cpu)
                 #
                 # Forward through network.
-                out = model(inputs)
+                if stage == 'train':
+                    out = model(inputs)
+                else:
+                    bs, ncrops, c, h, w = inputs.size()
+                    result = model(inputs.view(-1, c, h, w)) # fuse batch size and ncrops
+                    out = result.view(bs, ncrops, -1).mean(1) # avg over crops
                 #
                 # Backward pass.
                 optimizer.zero_grad()

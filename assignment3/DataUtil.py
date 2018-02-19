@@ -1,9 +1,9 @@
-import matplotlib.pyplot as plt
 import torch
+from PIL import Image
+import matplotlib.pyplot as plt
+from skimage import io, transform
 from torchvision import transforms, utils
 from torchvision.transforms import functional
-from skimage import io, transform
-from PIL import Image
 
 def plotSample(sample):
     ''' Plot an image batch.
@@ -34,7 +34,7 @@ class Rescale(object):
     def __call__(self, sample):
         image, labels = sample['img'], sample['labels']
         w, h = image.size
-        # 
+        #
         # Check input params.
         if isinstance(self.output_size, int):
             if h > w:
@@ -113,7 +113,7 @@ class Normalize(object):
         return sample
 
 class RandomFlips(object):
-    '''Randomly horizontally and vertically flip images. 
+    '''Randomly horizontally and vertically flip images.
     '''
 
     def __init__(self, hFlip = 0.5, vFlip = 0.5):
@@ -147,4 +147,41 @@ class ToTensor(object):
 
     def __call__(self, sample):
         sample['img'] = self.totensor(sample['img'])
+        return sample
+
+class RandomRotation(object):
+    """Randomly rotate an image between the specified angles.
+
+    Args:
+        deg (float): Extents of the random rotation.
+    """
+    def __init__(self, deg):
+        #
+        # TODO: Possibly extend this to work for a larger range and choose the closest correct grid location.
+        self.t = transforms.RandomRotation(deg, Image.BILINEAR)
+
+    def __call__(self, sample):
+        sample['img'] = self.t(sample['img'])
+        return sample
+
+class RandomResizedCrop(object):
+
+    def __init__(self, size, scale = (0.08, 1.0), ratio=(0.75, 1.3333333333333333)):
+        self.t = transforms.RandomResizedCrop(size, scale=scale, ratio=ratio, interpolation=2)
+
+    def __call__(self, sample):
+        sample['img'] = self.t(sample['img'])
+        return sample
+
+class FiveCrop(object):
+
+    def __init__(self, size, mean, var):
+        self.t = transforms.FiveCrop(size)
+        self.norm = transforms.Normalize(mean, var)
+
+
+    def __call__(self, sample):
+        imgs = self.t(sample['img'])
+        imgs = torch.stack([self.norm(transforms.ToTensor()(crop)) for crop in imgs])
+        sample['img'] = imgs
         return sample
