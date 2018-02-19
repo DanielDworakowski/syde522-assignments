@@ -54,12 +54,13 @@ def train(args, imgs, labels, img_val, label_val):
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
             DataUtil.RandomRotation(10),
-            DataUtil.RandomResizedCrop(140, (0.75, 1.0)),
+            DataUtil.RandomResizedCrop(140, (0.7, 1.0)),
             DataUtil.ToTensor(),
             DataUtil.Normalize([0.59008044], np.sqrt([0.06342617])),
         ])
     t_test = transforms.Compose([
             DataUtil.ToPIL(),
+            DataUtil.RandomFlips(),
             DataUtil.FiveCrop(140, [0.59008044], np.sqrt([0.06342617])),
             # DataUtil.Normalize(),
         ])
@@ -83,7 +84,7 @@ def train(args, imgs, labels, img_val, label_val):
         model.cuda()
     #
     # Type of optimizer.
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-3)
     bestModel = model.state_dict()
     bestAcc = 0
     logger = None
