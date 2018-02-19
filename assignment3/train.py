@@ -61,7 +61,7 @@ def train(args, imgs, labels, img_val, label_val):
     t_test = transforms.Compose([
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
-            DataUtil.FiveCrop(140, [0.59008044], np.sqrt([0.06342617])),
+            DataUtil.TenCrop(140, [0.59008044], np.sqrt([0.06342617])),
             # DataUtil.Normalize(),
         ])
     # RandomRotation

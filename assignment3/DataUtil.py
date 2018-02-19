@@ -173,10 +173,10 @@ class RandomResizedCrop(object):
         sample['img'] = self.t(sample['img'])
         return sample
 
-class FiveCrop(object):
+class TenCrop(object):
 
     def __init__(self, size, mean, var):
-        self.t = transforms.FiveCrop(size)
+        self.t = transforms.TenCrop(size)
         self.norm = transforms.Normalize(mean, var)
 
 
