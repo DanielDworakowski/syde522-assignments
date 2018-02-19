@@ -8,7 +8,7 @@ import numpy as np
 import progressbar
 from debug import *
 # import mininet2 as mn
-import pjReddieNet as mn
+import mininet2 as mn
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as dl
@@ -21,9 +21,9 @@ import torchvision.transforms as transforms
 # Parse the input arguments.
 def getInputArgs():
     parser = argparse.ArgumentParser('General tool to train a NN based on passed configuration.')
-    parser.add_argument('--nSplit', dest='nSplit', default=10, type=int, help='How many splits to use in KFold cross validation.')
-    parser.add_argument('--numEpochs', dest='numEpochs', default=32, type=int, help='How many splits to use in KFold cross validation.')
-    parser.add_argument('--batchSize', dest='bSize', default=16, type=int, help='How many splits to use in KFold cross validation.')
+    parser.add_argument('--nSplit', dest='nSplit', default=8, type=int, help='How many splits to use in KFold cross validation.')
+    parser.add_argument('--numEpochs', dest='numEpochs', default=64, type=int, help='How many splits to use in KFold cross validation.')
+    parser.add_argument('--batchSize', dest='bSize', default=32, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--useTB', dest='useTB', default=False, action='store_true', help='Whether or not to log to Tesnor board.')
     args = parser.parse_args()
     return args
@@ -48,11 +48,13 @@ def closeTensorboard(logger):
 #
 # Main loop for running the agent.
 def train(args, imgs, labels, img_val, label_val):
-    # 
+    #
     # Create the image augmentation.
     t = transforms.Compose([
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
+            # DataUtil.RandomResizedCrop(140, (0.75, 1.0)),
+            DataUtil.RandomRotation(5),
             DataUtil.ToTensor(),
             DataUtil.Normalize([0.59008044], np.sqrt([0.06342617])),
         ])
@@ -70,12 +72,12 @@ def train(args, imgs, labels, img_val, label_val):
     model = mn.Mininet()
     usegpu = torch.cuda.is_available()
     criteria = nn.CrossEntropyLoss()
-    # 
+    #
     # Whether to use the GPU.
     if usegpu:
         model.cuda()
-    # 
-    # Type of optimizer. 
+    #
+    # Type of optimizer.
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-3)
     bestModel = model.state_dict()
     bestAcc = 0
@@ -86,7 +88,7 @@ def train(args, imgs, labels, img_val, label_val):
         logger = SummaryWriter()
         logEpoch = logEpochTensorboard
         closeLogger = closeTensorboard
-    # 
+    #
     # Iterate.
     for epoch in range(args.numEpochs):
         printColour('Epoch {}/{}'.format(epoch, args.numEpochs - 1), colours.OKBLUE)
@@ -100,11 +102,11 @@ def train(args, imgs, labels, img_val, label_val):
             runningLoss = 0.0
             runningCorrect = 0.0
             loader = stages[stage]
-            # 
+            #
             # Progress bar.
             numMini = len(stages[stage])
-            pbar = progressbar.ProgressBar(max_value=numMini-1) 
-            # 
+            pbar = progressbar.ProgressBar(max_value=numMini-1)
+            #
             # Train.
             for i, data in enumerate(loader):
                 inputs, labels_cpu = data['img'], data['label']
@@ -113,7 +115,7 @@ def train(args, imgs, labels, img_val, label_val):
                     inputs, labels = Variable(inputs).cuda(async = True), Variable(labels_cpu).cuda(async = True)
                 else:
                     inputs, labels = Variable(inputs), Variable(labels_cpu)
-                # 
+                #
                 # Forward through network.
                 out = model(inputs)
                 #
@@ -146,7 +148,7 @@ def train(args, imgs, labels, img_val, label_val):
             #
             # Print per epoch results.
             print('\n{} Loss: {:.4f} Acc: {:.4f}'.format(stage, epochLoss, epochAcc))
-            # 
+            #
             # Summary for logging in TB.
             summary = {
                 'phase': stage,
@@ -165,12 +167,14 @@ if __name__ == '__main__':
     args = getInputArgs()
     imgs = np.expand_dims(np.load('data/X.npy').astype(np.float32) / 255, 1)
     labels = np.load('data/Y.npy')
-    # 
-    # Image statistics. 
+    #
+    # Image statistics.
     curMean = np.mean(imgs, axis=(0,2,3))
     curVar = np.var(imgs, axis=(0,2,3))
     kf = KFold(n_splits=args.nSplit, shuffle = True)
-    for train_index, test_index in kf.split(imgs): 
+    for train_index, test_index in kf.split(imgs):
         X_train, X_test = torch.from_numpy(imgs[train_index]), torch.from_numpy(imgs[test_index])
         y_train, y_test = torch.from_numpy(labels[train_index]), torch.from_numpy(labels[test_index])
         train(args, X_train, y_train, X_test, y_test)
+        print('No cross validation yet/')
+        break
