@@ -7,8 +7,8 @@ import dataloader
 import numpy as np
 import progressbar
 from debug import *
-# import mininet2 as mn
 import mininet2 as mn
+# import cropnet as mn
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as dl
@@ -22,7 +22,7 @@ import torchvision.transforms as transforms
 def getInputArgs():
     parser = argparse.ArgumentParser('General tool to train a NN based on passed configuration.')
     parser.add_argument('--nSplit', dest='nSplit', default=8, type=int, help='How many splits to use in KFold cross validation.')
-    parser.add_argument('--numEpochs', dest='numEpochs', default=64, type=int, help='How many splits to use in KFold cross validation.')
+    parser.add_argument('--numEpochs', dest='numEpochs', default=128, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--batchSize', dest='bSize', default=32, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--useTB', dest='useTB', default=False, action='store_true', help='Whether or not to log to Tesnor board.')
     args = parser.parse_args()
