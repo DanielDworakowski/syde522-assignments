@@ -1,0 +1,2 @@
+python train.py --nSplit 7 --numEpochs 128 --ens --extra 10
+
