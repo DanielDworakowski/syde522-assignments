@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+import gc
+import sys
+import copy
 import math
 import torch
 import DataUtil
@@ -7,11 +10,12 @@ import dataloader
 import numpy as np
 import progressbar
 from debug import *
-# import mininet2 as mn
+import pandas as pd
 import cropnet as mn
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as dl
+from time import gmtime, strftime
 from torch.autograd import Variable
 from torch.optim import lr_scheduler
 from tensorboardX import SummaryWriter
@@ -25,6 +29,8 @@ def getInputArgs():
     parser.add_argument('--numEpochs', dest='numEpochs', default=128, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--batchSize', dest='bSize', default=32, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--useTB', dest='useTB', default=False, action='store_true', help='Whether or not to log to Tesnor board.')
+    parser.add_argument('--extra', dest='extra', default=1, type=int,  help='Whether or not to log to Tesnor board.')
+    parser.add_argument('--ens', dest='useENS', default=False, action='store_true', help='Whether to use an enemble of networks.')
     args = parser.parse_args()
     return args
 #
@@ -47,13 +53,14 @@ def closeTensorboard(logger):
     logger.close()
 #
 # Main loop for running the agent.
-def train(args, imgs, labels, img_val, label_val):
+def train(args, imgs, labels, img_val, label_val, modelConst):
     #
     # Create the image augmentation.
     t = transforms.Compose([
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
             # DataUtil.RandomRotation(10),
+            # DataUtil.ColourJitter(0.1, 0.1, 0.1, 0),
             DataUtil.RandomResizedCrop(140, (0.7, 1.0)),
             DataUtil.ToTensor(),
             DataUtil.Normalize([0.59008044], np.sqrt([0.06342617])),
@@ -62,7 +69,6 @@ def train(args, imgs, labels, img_val, label_val):
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
             DataUtil.TenCrop(140, [0.59008044], np.sqrt([0.06342617])),
-            # DataUtil.Normalize(),
         ])
     # RandomRotation
     # FiveCrop
@@ -72,10 +78,10 @@ def train(args, imgs, labels, img_val, label_val):
     train = dataloader.npdataset(imgs, labels.view(-1), t)
     validation = dataloader.npdataset(img_val, label_val.view(-1), t_test)
     stages = {
-        'train': torch.utils.data.DataLoader(train, batch_size=args.bSize, shuffle=True, num_workers=0),
-        'val': torch.utils.data.DataLoader(validation, batch_size=args.bSize, shuffle=False, num_workers=0),
+        'train': torch.utils.data.DataLoader(train, batch_size=args.bSize, shuffle=True, num_workers=0, pin_memory = True),
+        'val': torch.utils.data.DataLoader(validation, batch_size=args.bSize, shuffle=False, num_workers=0, pin_memory = True),
     }
-    model = mn.Mininet()
+    model = modelConst()
     usegpu = torch.cuda.is_available()
     criteria = nn.CrossEntropyLoss()
     #
@@ -175,20 +181,94 @@ def train(args, imgs, labels, img_val, label_val):
             logEpoch(logger, model, summary)
     printColour('Best validation performance:%f'%(bestAcc), colours.OKGREEN)
     closeLogger(logger)
+    return bestModel, bestAcc
+#
+# Evaluate and return predictions.
+def evalModel(args, imgs, model):
+    t_test = transforms.Compose([
+            DataUtil.ToPIL(),
+            DataUtil.RandomFlips(),
+            DataUtil.TenCrop(140, [0.59008044], np.sqrt([0.06342617])),
+        ])
+    labels = torch.zeros(imgs.shape[0])
+    test = dataloader.npdataset(imgs, labels.view(-1), t_test)
+    loader = torch.utils.data.DataLoader(test, batch_size=args.bSize, shuffle=False, num_workers=0)
+    outs = []
+    usegpu = torch.cuda.is_available()
+    if usegpu:
+        model.cuda()
+    #
+    # Iterate.
+    for data in loader:
+        inputs, labels_cpu = data['img'], data['label']
+        if usegpu:
+            labels_cpu.squeeze_()
+            inputs, labels = Variable(inputs).cuda(async = True), Variable(labels_cpu).cuda(async = True)
+        else:
+            inputs, labels = Variable(inputs), Variable(labels_cpu)
+        #
+        # The 5 crop from above takes the corners of the iamge and center.
+        # We must now average the contributions.
+        bs, ncrops, c, h, w = inputs.size()
+        result = model(inputs.view(-1, c, h, w)) # fuse batch size and ncrops
+        out = result.view(bs, ncrops, -1).mean(1) # avg over crops
+        # print(outs)
+        outs.append(copy.copy(out.cpu()))
+    outs = torch.cat(outs, dim=0)
+    return outs
+#
+# Iterate and get results of an ensemble.
+def runEnsemble(mdlConst, modelsData, img_test):
+    #
+    # Use the ensemble.
+    results = []
+    X_test = torch.from_numpy(img_test)
+    for mdl, acc in modelsData:
+        model = mdlConst()
+        model.load_state_dict(mdl)
+        model.cpu()
+        result = evalModel(args, X_test, model)
+        results.append(result)
+    #
+    # Begin averaging.
+    allResults = torch.stack(results, dim=1)
+    out = allResults.mean(1)
+    _, preds = torch.max(out.data, 1)
+    return preds
 #
 # Main code.
 if __name__ == '__main__':
     args = getInputArgs()
     imgs = np.expand_dims(np.load('data/X.npy').astype(np.float32) / 255, 1)
     labels = np.load('data/Y.npy')
+    img_test =  np.expand_dims(np.load('data/X_test.npy').astype(np.float32) / 255, 1)
     #
     # Image statistics.
     curMean = np.mean(imgs, axis=(0,2,3))
     curVar = np.var(imgs, axis=(0,2,3))
-    kf = KFold(n_splits=args.nSplit, shuffle = True)
-    for train_index, test_index in kf.split(imgs):
-        X_train, X_test = torch.from_numpy(imgs[train_index]), torch.from_numpy(imgs[test_index])
-        y_train, y_test = torch.from_numpy(labels[train_index]), torch.from_numpy(labels[test_index])
-        train(args, X_train, y_train, X_test, y_test)
-        print('No cross validation yet/')
-        break
+    models = []
+    for i in range(args.extra):
+        kf = KFold(n_splits=args.nSplit, shuffle = True)
+        mdlConst = mn.Mininet
+        for train_index, test_index in kf.split(imgs):
+            X_train, X_test = torch.from_numpy(imgs[train_index]), torch.from_numpy(imgs[test_index])
+            y_train, y_test = torch.from_numpy(labels[train_index]), torch.from_numpy(labels[test_index])
+            mdlPair = train(args, X_train, y_train, X_test, y_test, mdlConst)
+            models.append(mdlPair)
+            if not args.useENS:
+                print('No cross validation')
+                break
+            torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
+            gc.collect()
+    if not args.useENS:
+        sys.exit(0)
+    preds = runEnsemble(mdlConst, models, imgs)
+    avg = np.mean(preds.numpy() == labels)
+    print('Ensemble average on training set: ', avg)
+    preds = runEnsemble(mdlConst, models, img_test)
+    df = pd.DataFrame(preds.numpy())
+    df.columns = ['Class']
+    df.index.name = 'Id'
+    df.to_csv(strftime("%Y-%m-%d %H:%M:%S", gmtime())+'_test.csv')
+
