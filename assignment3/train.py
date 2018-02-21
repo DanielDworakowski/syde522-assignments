@@ -270,5 +270,5 @@ if __name__ == '__main__':
     df = pd.DataFrame(preds.numpy())
     df.columns = ['Class']
     df.index.name = 'Id'
-    df.to_csv(strftime("%Y-%m-%d %H:%M:%S", gmtime())+'_test.csv')
+    df.to_csv(strftime("%Y-%m-%d_%H:%M:%S", gmtime())+'_test.csv')
 
