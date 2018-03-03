@@ -11,7 +11,7 @@ import numpy as np
 import progressbar
 from debug import *
 import pandas as pd
-import cropnet as mn
+import pjReddieNet as mn
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as dl
@@ -21,6 +21,9 @@ from torch.optim import lr_scheduler
 from tensorboardX import SummaryWriter
 from sklearn.model_selection import KFold
 import torchvision.transforms as transforms
+
+torch.backends.cudnn.benchmark = True
+
 #
 # Parse the input arguments.
 def getInputArgs():
@@ -30,6 +33,7 @@ def getInputArgs():
     parser.add_argument('--batchSize', dest='bSize', default=32, type=int, help='How many splits to use in KFold cross validation.')
     parser.add_argument('--useTB', dest='useTB', default=False, action='store_true', help='Whether or not to log to Tesnor board.')
     parser.add_argument('--extra', dest='extra', default=1, type=int,  help='Whether or not to log to Tesnor board.')
+    parser.add_argument('--cropsize', dest='cropSize', default=160, type=int,  help='Whether or not to log to Tesnor board.')
     parser.add_argument('--ens', dest='useENS', default=False, action='store_true', help='Whether to use an enemble of networks.')
     args = parser.parse_args()
     return args
@@ -59,16 +63,18 @@ def train(args, imgs, labels, img_val, label_val, modelConst):
     t = transforms.Compose([
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
-            # DataUtil.RandomRotation(10),
-            # DataUtil.ColourJitter(0.1, 0.1, 0.1, 0),
-            DataUtil.RandomResizedCrop(140, (0.7, 1.0)),
+            # DataUtil.RandomRotation(5),
+            DataUtil.ColourJitter(0.1, 0.1, 0.1, 0),
+            DataUtil.RandomResizedCrop(args.cropSize, (0.5, 1.3)),
             DataUtil.ToTensor(),
             DataUtil.Normalize([0.59008044], np.sqrt([0.06342617])),
+            # DataUtil.TenCrop(140, [0.59008044], np.sqrt([0.06342617])),
+            #
         ])
     t_test = transforms.Compose([
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
-            DataUtil.TenCrop(140, [0.59008044], np.sqrt([0.06342617])),
+            DataUtil.TenCrop(args.cropSize, [0.59008044], np.sqrt([0.06342617])),
         ])
     # RandomRotation
     # FiveCrop
@@ -90,8 +96,8 @@ def train(args, imgs, labels, img_val, label_val, modelConst):
         model.cuda()
     #
     # Type of optimizer.
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-3)
-    bestModel = model.state_dict()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-2)
+    bestModel = copy.deepcopy(model.state_dict())
     bestAcc = 0
     logger = None
     logEpoch = doNothing
@@ -105,6 +111,7 @@ def train(args, imgs, labels, img_val, label_val, modelConst):
     for epoch in range(args.numEpochs):
         printColour('Epoch {}/{}'.format(epoch, args.numEpochs - 1), colours.OKBLUE)
         for stage in stages:
+            gc.collect()
             print('Stage: ', stage)
             #
             # Switch on / off gradients.
@@ -121,12 +128,12 @@ def train(args, imgs, labels, img_val, label_val, modelConst):
             #
             # Train.
             for i, data in enumerate(loader):
-                inputs, labels_cpu = data['img'], data['label']
+                inputs_cpu, labels_cpu = data['img'], data['label']
                 if usegpu:
                     labels_cpu.squeeze_()
-                    inputs, labels = Variable(inputs).cuda(async = True), Variable(labels_cpu).cuda(async = True)
+                    inputs, labels = Variable(inputs_cpu, requires_grad=False).cuda(async = True), Variable(labels_cpu, requires_grad=False).cuda(async = True)
                 else:
-                    inputs, labels = Variable(inputs), Variable(labels_cpu)
+                    inputs, labels = Variable(inputs_cpu, requires_grad=False, volatile=True), Variable(labels_cpu, requires_grad=False, volatile=True)
                 #
                 # Forward through network.
                 if stage == 'train':
@@ -135,8 +142,9 @@ def train(args, imgs, labels, img_val, label_val, modelConst):
                     #
                     # The 5 crop from above takes the corners of the iamge and center.
                     # We must now average the contributions.
-                    bs, ncrops, c, h, w = inputs.size()
-                    result = model(inputs.view(-1, c, h, w)) # fuse batch size and ncrops
+                    bs, ncrops, c, h, w = inputs_cpu.size()
+                    inputs = inputs.view(-1, c, h, w)
+                    result = model(inputs) # fuse batch size and ncrops
                     out = result.view(bs, ncrops, -1).mean(1) # avg over crops
                 #
                 # Backward pass.
@@ -181,14 +189,17 @@ def train(args, imgs, labels, img_val, label_val, modelConst):
             logEpoch(logger, model, summary)
     printColour('Best validation performance:%f'%(bestAcc), colours.OKGREEN)
     closeLogger(logger)
-    return bestModel, bestAcc
+    retModel = copy.deepcopy(bestModel)
+    for key, val in model_dict.state_dict.items():
+        retModel.state_dict[key] = val.cpu()
+    return retModel, bestAcc
 #
 # Evaluate and return predictions.
 def evalModel(args, imgs, model):
     t_test = transforms.Compose([
             DataUtil.ToPIL(),
-            DataUtil.RandomFlips(),
-            DataUtil.TenCrop(140, [0.59008044], np.sqrt([0.06342617])),
+            # DataUtil.RandomFlips(),
+            DataUtil.TenCrop(args.cropSize, [0.59008044], np.sqrt([0.06342617])),
         ])
     labels = torch.zeros(imgs.shape[0])
     test = dataloader.npdataset(imgs, labels.view(-1), t_test)
@@ -200,12 +211,13 @@ def evalModel(args, imgs, model):
     #
     # Iterate.
     for data in loader:
+        gc.collect()
         inputs, labels_cpu = data['img'], data['label']
         if usegpu:
             labels_cpu.squeeze_()
-            inputs, labels = Variable(inputs).cuda(async = True), Variable(labels_cpu).cuda(async = True)
+            inputs, labels = Variable(inputs, requires_grad=False).cuda(async = True), Variable(labels_cpu, requires_grad=False).cuda(async = True)
         else:
-            inputs, labels = Variable(inputs), Variable(labels_cpu)
+            inputs, labels = Variable(inputs, requires_grad=False), Variable(labels_cpu, requires_grad=False)
         #
         # The 5 crop from above takes the corners of the iamge and center.
         # We must now average the contributions.
@@ -227,13 +239,29 @@ def runEnsemble(mdlConst, modelsData, img_test):
         model = mdlConst()
         model.load_state_dict(mdl)
         model.cpu()
+        model.train(False)
         result = evalModel(args, X_test, model)
         results.append(result)
     #
     # Begin averaging.
     allResults = torch.stack(results, dim=1)
-    out = allResults.mean(1)
-    _, preds = torch.max(out.data, 1)
+    #
+    # Average.
+    # out = allResults.mean(1)
+    # _, preds = torch.max(out.data, 1)
+    #
+    # Vote.
+    # out = allResults.argmax(2)
+    energy, classVotes = allResults.max(2)
+    votes = np.zeros((img_test.shape[0], 20))
+    #
+    # There is likely a fancy numpy way to do this.
+    for i, vote in enumerate(classVotes):
+        for voteIdx in vote.data.numpy():
+            votes[i, voteIdx] += 1
+    #
+    # Count up the votes.
+    preds = torch.Tensor(np.argmax(votes, axis=1))
     return preds
 #
 # Main code.
@@ -261,6 +289,7 @@ if __name__ == '__main__':
             torch.cuda.empty_cache()
             torch.cuda.empty_cache()
             gc.collect()
+
     if not args.useENS:
         sys.exit(0)
     preds = runEnsemble(mdlConst, models, imgs)
@@ -269,6 +298,7 @@ if __name__ == '__main__':
     preds = runEnsemble(mdlConst, models, img_test)
     df = pd.DataFrame(preds.numpy())
     df.columns = ['Class']
+    df.Class = df.Class.astype(int)
     df.index.name = 'Id'
     df.to_csv(strftime("%Y-%m-%d_%H:%M:%S", gmtime())+'_test.csv')
 

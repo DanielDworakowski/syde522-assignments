@@ -16,7 +16,7 @@ class Mininet(nn.Module):
         super(Mininet, self).__init__()
         self.width = 160
         self.height = 160
-        num_output = 1
+        num_output = 20
 
         self.cnn = nn.Sequential(OrderedDict([
             # conv1
@@ -47,7 +47,7 @@ class Mininet(nn.Module):
             ('conv5', nn.Conv2d(128, 256, 1, 1, 1, bias=False)),
             ('bn5', nn.BatchNorm2d(256)),
             ('leaky5', nn.LeakyReLU(0.1, inplace=True)),
-            ('pool5', nn.MaxPool2d(2, 2)),
+            ('pool5', nn.MaxPool2d(3, 3)),
 
             # conv6
             ('conv6', nn.Conv2d(256, 512, 1, 1, 1, bias=False)),
@@ -56,21 +56,20 @@ class Mininet(nn.Module):
             ('pool6', MaxPoolStride1()),
 
             # conv7
-            ('conv7', nn.Conv2d(512, 1024, 1, 1, 1, bias=False)),
+            ('conv7', nn.Conv2d(512, 1024, 3, 3, 1, bias=False)),
             ('bn7', nn.BatchNorm2d(1024)),
             ('leaky7', nn.LeakyReLU(0.1, inplace=True)),
 
             # conv8
-            ('conv8', nn.Conv2d(1024, 1024, 1, 1, 1, bias=False)),
+            ('conv8', nn.Conv2d(1024, 1024, 3, 3, 1, bias=False)),
             ('bn8', nn.BatchNorm2d(1024)),
             ('leaky8', nn.LeakyReLU(0.1, inplace=True)),
 
             # output
-            ('output', nn.Conv2d(1024, num_output, 1, 1, 0)),
+            ('resize', nn.Conv2d(1024, num_output, 1, 1, 0)),
         ]))
-        self.lin = nn.Linear(221, 20)
 
     def forward(self, x):
         out = self.cnn(x)
-        out = self.lin(out.view(-1, 13 * 17))
+        out = out.view(x.shape[0], -1)
         return out

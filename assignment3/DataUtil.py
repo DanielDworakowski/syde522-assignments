@@ -167,7 +167,7 @@ class RandomRotation(object):
 class RandomResizedCrop(object):
 
     def __init__(self, size, scale = (0.08, 1.0), ratio=(0.75, 1.3333333333333333)):
-        self.t = transforms.RandomResizedCrop(size, scale=scale, ratio=ratio, interpolation=2)
+        self.t = transforms.RandomResizedCrop(size, scale=scale, ratio=ratio, interpolation= Image.BICUBIC)
 
     def __call__(self, sample):
         sample['img'] = self.t(sample['img'])
