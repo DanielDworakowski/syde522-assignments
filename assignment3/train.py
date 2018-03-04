@@ -64,7 +64,7 @@ def train(args, imgs, labels, img_val, label_val, modelConst):
             DataUtil.ToPIL(),
             DataUtil.RandomFlips(),
             # DataUtil.RandomRotation(5),
-            DataUtil.ColourJitter(0.1, 0.1, 0.1, 0),
+            # DataUtil.ColourJitter(0.1, 0.1, 0.1, 0),
             DataUtil.RandomResizedCrop(args.cropSize, (0.5, 1.3)),
             DataUtil.ToTensor(),
             DataUtil.Normalize([0.59008044], np.sqrt([0.06342617])),
@@ -190,8 +190,8 @@ def train(args, imgs, labels, img_val, label_val, modelConst):
     printColour('Best validation performance:%f'%(bestAcc), colours.OKGREEN)
     closeLogger(logger)
     retModel = copy.deepcopy(bestModel)
-    for key, val in model_dict.state_dict.items():
-        retModel.state_dict[key] = val.cpu()
+    for key, val in retModel.items():
+        retModel[key] = val.cpu()
     return retModel, bestAcc
 #
 # Evaluate and return predictions.
@@ -272,8 +272,8 @@ if __name__ == '__main__':
     img_test =  np.expand_dims(np.load('data/X_test.npy').astype(np.float32) / 255, 1)
     #
     # Image statistics.
-    curMean = np.mean(imgs, axis=(0,2,3))
-    curVar = np.var(imgs, axis=(0,2,3))
+    # curMean = np.mean(imgs, axis=(0,2,3))
+    # curVar = np.var(imgs, axis=(0,2,3))
     models = []
     for i in range(args.extra):
         kf = KFold(n_splits=args.nSplit, shuffle = True)
